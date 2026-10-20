@@ -39,6 +39,27 @@ struct BananaStats: Equatable {
         self.wishlistsToday = wishlistsToday; self.wishlistsUpdatedAt = wishlistsUpdatedAt
     }
 
+    var hasData: Bool { players != nil || wishlists != nil }
+
+    /// Last good payload, so a failed refresh keeps showing numbers instead of "—".
+    /// (Each process — app, widget — has its own UserDefaults; that is fine, both fetch.)
+    private static let cacheKey = "bananaStats.lastGoodJSON"
+    static func cached() -> BananaStats? {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey),
+              let json = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        let s = BananaStats(json: json)
+        return s.hasData ? s : nil
+    }
+
+    /// Fetch; on failure fall back to the cached payload. `fresh` is false when the
+    /// result came from the cache (the widget then retries sooner).
+    static func fetchOrCached() async -> (stats: BananaStats, fresh: Bool) {
+        let live = await fetch()
+        if live.hasData { return (live, true) }
+        if let c = cached() { return (c, false) }
+        return (live, false)
+    }
+
     /// Fetches the stats; a network error, non-JSON body (e.g. the site's HTML) or non-2xx → `.empty`.
     static func fetch() async -> BananaStats {
         var req = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
@@ -47,7 +68,9 @@ struct BananaStats: Equatable {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
                   let json = try? JSONSerialization.jsonObject(with: data) else { return .empty }
-            return BananaStats(json: json)
+            let stats = BananaStats(json: json)
+            if stats.hasData { UserDefaults.standard.set(data, forKey: cacheKey) }
+            return stats
         } catch { return .empty }
     }
 }

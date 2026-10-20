@@ -10,14 +10,16 @@ struct BananaProvider: TimelineProvider {
     func placeholder(in context: Context) -> BananaEntry { BananaEntry(date: Date(), stats: .preview) }
     func getSnapshot(in context: Context, completion: @escaping (BananaEntry) -> Void) {
         if context.isPreview { completion(BananaEntry(date: Date(), stats: .preview)); return }
-        Task { completion(BananaEntry(date: Date(), stats: await BananaStats.fetch())) }
+        Task { completion(BananaEntry(date: Date(), stats: await BananaStats.fetchOrCached().stats)) }
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<BananaEntry>) -> Void) {
         Task {
-            let stats = await BananaStats.fetch()
+            let (stats, fresh) = await BananaStats.fetchOrCached()
             let now = Date()
-            // WidgetKit decides the real cadence; ~15 min is the fastest it honors in practice.
-            let next = Calendar.current.date(byAdding: .minute, value: 15, to: now)!
+            // WidgetKit decides the real cadence; ~15 min is the fastest it honors in
+            // practice. After a failed fetch (API down, no network) ask again sooner so a
+            // "—" or a stale number does not sit there for a full cycle.
+            let next = Calendar.current.date(byAdding: .minute, value: fresh ? 15 : 5, to: now)!
             completion(Timeline(entries: [BananaEntry(date: now, stats: stats)], policy: .after(next)))
         }
     }

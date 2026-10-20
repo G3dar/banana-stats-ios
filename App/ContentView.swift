@@ -2,8 +2,9 @@ import SwiftUI
 import WidgetKit
 
 struct ContentView: View {
-    @State private var stats = BananaStats.empty
+    @State private var stats = BananaStats.cached() ?? .empty
     @State private var loading = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -28,6 +29,8 @@ struct ContentView: View {
             }
             .refreshable { await refresh() }
             .task { await refresh() }
+            // Coming back to the app is the user's "refresh the widget" gesture.
+            .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await refresh() } } }
         }
     }
     private func row(_ label: String, _ value: String) -> some View {
